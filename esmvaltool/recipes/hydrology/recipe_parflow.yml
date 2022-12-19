@@ -1,0 +1,44 @@
+# ESMValTool
+# recipe_parflow.yml
+---
+documentation:
+  title: Generate forcing for the ParFlow hydrological model
+  description: |
+    Pre-processes climate data for use in the ParFlow hydrological model.
+
+  authors:
+    - defnet_amy
+
+  maintainer:
+    - unmaintained
+
+  projects:
+    - ewatercycle
+
+  references:
+    - acknow_project
+
+preprocessors:
+  rough_cutout: # Let's use CONUS2, which is larger
+    extract_region:
+      start_longitude: -125.90504919712883
+      end_longitude: -65.59822530992093
+      start_latitude: 23.393528753065162
+      end_latitude: 53.88240906715393
+
+# dataset native6 to get hourly measurements (instead of OBS6, which includes daily conversions)
+datasets:
+  - {dataset: ERA5, project: native6, tier: 3, type: reanaly, version: 1}
+
+diagnostics:
+  parflow:
+    description: ParFlow input preprocessor for hourly data
+    variables:
+      tas:
+        mip: E1hr
+        start_year: 1990
+        end_year: 1990
+        preprocessor: rough_cutout
+    scripts:
+      script:
+        script: hydrology/parflow.py

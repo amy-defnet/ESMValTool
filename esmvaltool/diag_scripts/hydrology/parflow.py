@@ -13,26 +13,23 @@ from esmvaltool.diag_scripts.shared import (ProvenanceLogger,
 
 logger = logging.getLogger(Path(__file__).name)
 
-
-# def create_provenance_record(attributes):
-#     """Create a provenance record."""
-#     ancestor_file = attributes['filename']
-
-#     record = {
-#         'caption': "Forcings for the ParFlow hydrological model.",
-#         'domains': ['global'],
-#         'authors': [
-#             'defnet_amy',
-#         ],
-#         'projects': [
-#             'ewatercycle',
-#         ],
-#         'references': [
-#             'acknow_project',
-#         ],
-#         'ancestors': [ancestor_file],
-#     }
-#     return record
+def create_provenance_record():
+    """Create a provenance record."""
+    record = {
+        'caption': "Forcings for the ParFlow hydrological model.",
+        'domains': ['global'],
+        'authors': [
+            'defnet_amy',
+        ],
+        'projects': [
+            'ewatercycle',
+        ],
+        'references': [
+            'acknow_project',
+        ],
+        'ancestors': [],
+    }
+    return record
 
 def make_filename(metadata, cfg, extension='nc'):
     """
@@ -58,7 +55,7 @@ def get_input_cubes(metadata):
         'vas':'VGRD'
     }
 
-    #provenance = create_provenance_record()
+    provenance = create_provenance_record()
 
     # Create dictionary, all_vars, to store {ParFlow varname}: {data cube} pairs
     all_vars = {}
@@ -71,21 +68,21 @@ def get_input_cubes(metadata):
 
         logger.info("Loading variable %s", short_name)
         cube = iris.load_cube(filename)
-        #cube.attributes.clear()
 
         # Rename variable name using ParFlow variable naming conventions
         cube.var_name = parflow_varname_xwalk[short_name]
 
         all_vars[parflow_varname_xwalk[short_name]] = cube
-        # provenance['ancestors'].append(filename)
 
-    return all_vars #, provenance
+        provenance['ancestors'].append(filename)
+
+    return all_vars, provenance
 
 def main(cfg):
     input_metadata = cfg['input_data'].values()
 
     for dataset, metadata in group_metadata(input_metadata, 'dataset').items():
-        all_vars = get_input_cubes(metadata)
+        all_vars, provenance = get_input_cubes(metadata)
         cubes = iris.cube.CubeList(all_vars.values())
 
         output_filename = make_filename(metadata, cfg, extension='nc')
@@ -94,6 +91,10 @@ def main(cfg):
 
         # Save output file
         iris.save(cubes, output_filename)
+
+        # Store provenance
+        with ProvenanceLogger(cfg) as provenance_logger:
+            provenance_logger.log(output_filename, provenance)
 
 #       # # Store provenance
 #       # provenance_record = create_provenance_record(attributes)

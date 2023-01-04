@@ -19,7 +19,7 @@ documentation:
     - acknow_project
 
 preprocessors:
-  rough_cutout: # Let's use CONUS2, which is larger
+  rough_cutout: # Let's use CONUS2 bounding box, plus a one-degree buffer
     extract_region:
       start_longitude: -125.90504919712883
       end_longitude: -65.59822530992093
@@ -34,11 +34,13 @@ diagnostics:
   parflow:
     description: ParFlow input preprocessor for hourly data
     variables:
-      tas:
+      tas: &var
         mip: E1hr
         start_year: 1990
         end_year: 1990
         preprocessor: rough_cutout
+      uas: *var
+      vas: *var
     scripts:
       script:
         script: hydrology/parflow.py

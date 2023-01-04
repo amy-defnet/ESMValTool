@@ -34,82 +34,74 @@ logger = logging.getLogger(Path(__file__).name)
 #     }
 #     return record
 
-def make_filename(attributes, cfg, varname_xwalk, num_hours, extension='nc'):
+def make_filename(metadata, cfg, extension='nc'):
     """
     Return a valid path for saving a diagnostic data file.
-    
-    File names are specific to ParFlow.
     """
-    short_name = attributes["short_name"]
-    try:
-        parflow_varname = varname_xwalk[short_name]
-    except:
-        raise ValueError(f'Input variable {short_name} not recognized as input variable for ParFlow recipe.')
-
-    # Set up istep in file name, padded to always consist of six characters
-    start_timestep = str(1).zfill(6)
-    end_timestep = str(num_hours).zfill(6)
+    # Use first variable set for defining dataset, start year, end year
+    attributes = metadata[0]
 
     # Define output file name and full path
-    base_name = f"{attributes['alias']}/{attributes['start_year']}/{attributes['alias']}.{parflow_varname}.{start_timestep}_to_{end_timestep}"
+    base_name = f"{attributes['alias']}/{attributes['alias']}.forcing.hourly.{attributes['start_year']}.{attributes['end_year']}"
     filename = get_diagnostic_filename(base_name, cfg, extension=extension)
     return filename
 
-
-def main(cfg):
-    """Process data for use as input to the ParFlow hydrological model."""
+def get_input_cubes(metadata):
+    """Create a dict with all (preprocessed) input files."""
 
     # Crosswalk to ParFlow-specific variable names
     parflow_varname_xwalk = {
         'tas':'Temp',
         'pr':'APCP',
-        'ps':'Press'
+        'ps':'Press', 
+        'uas':'UGRD',
+        'vas':'VGRD'
     }
 
-    input_data = cfg['input_data'].values()
-    grouped_input_data = group_metadata(input_data,
-                                        'long_name',
-                                        sort='dataset')
+    #provenance = create_provenance_record()
 
-    print("grouped_input_data: ", grouped_input_data)
-    for long_name in grouped_input_data:
-        logger.info("Processing variable %s", long_name)
+    # Create dictionary, all_vars, to store {ParFlow varname}: {data cube} pairs
+    all_vars = {}
+    for attributes in metadata:
+        short_name = attributes['short_name']
+        if short_name in all_vars:
+            raise ValueError(
+                f"Multiple input files found for variable '{short_name}'.")
+        filename = attributes['filename']
 
-        for attributes in grouped_input_data[long_name]:
-            logger.info("Processing dataset %s", attributes['dataset'])
+        logger.info("Loading variable %s", short_name)
+        cube = iris.load_cube(filename)
+        #cube.attributes.clear()
 
-            # TO DO: create 'process_data' function(?)
-            # Read in data cube
-            input_file = attributes['filename']
-            cube = iris.load_cube(input_file)
+        # Rename variable name using ParFlow variable naming conventions
+        cube.var_name = parflow_varname_xwalk[short_name]
 
-            # Rename variable name using ParFlow variable naming conventions
-            cube.var_name = parflow_varname_xwalk[attributes['short_name']]
+        all_vars[parflow_varname_xwalk[short_name]] = cube
+        # provenance['ancestors'].append(filename)
 
-            # Get number of hours in cube
-            num_hours = cube.coord('time').shape[0]
+    return all_vars #, provenance
 
-            # Set up file name for saving data
-            output_filename = make_filename(
-                    attributes, cfg, parflow_varname_xwalk, num_hours, extension='nc'
-                )
-            print("Output file: ", output_filename)
-            Path(output_filename).parent.mkdir(exist_ok=True)
+def main(cfg):
+    input_metadata = cfg['input_data'].values()
 
-            # Save output file
-            iris.save(cube, output_filename)
+    for dataset, metadata in group_metadata(input_metadata, 'dataset').items():
+        all_vars = get_input_cubes(metadata)
+        cubes = iris.cube.CubeList(all_vars.values())
 
-            # # Store provenance
-            # provenance_record = create_provenance_record(attributes)
-            # with ProvenanceLogger(cfg) as provenance_logger:
-            #     provenance_logger.log(output_filename, provenance_record)
+        output_filename = make_filename(metadata, cfg, extension='nc')
+        print("Output file: ", output_filename)
+        Path(output_filename).parent.mkdir(exist_ok=True)
+
+        # Save output file
+        iris.save(cubes, output_filename)
+
+#       # # Store provenance
+#       # provenance_record = create_provenance_record(attributes)
+#       # with ProvenanceLogger(cfg) as provenance_logger:
+#       #     provenance_logger.log(output_filename, provenance_record)
 
 
 if __name__ == '__main__':
 
     with run_diagnostic() as config:
         main(config)
-
-# Notes:
-# grouped_input_data:  {'Near-Surface Air Temperature': [{'alias': 'ERA5', 'dataset': 'ERA5', 'diagnostic': 'parflow', 'end_year': 1990, 'filename': '/Users/ad9465/Documents/Scratch/esmvaltool_tutorial/esmvaltool_output/recipe_parflow_20221220_195637/preproc/parflow/tas/native6_ERA5_reanaly_1_E1hr_tas_1990-1990.nc', 'frequency': '1hrPt', 'long_name': 'Near-Surface Air Temperature', 'mip': 'E1hr', 'modeling_realm': ['atmos'], 'preprocessor': 'rough_cutout', 'project': 'native6', 'recipe_dataset_index': 0, 'short_name': 'tas', 'standard_name': 'air_temperature', 'start_year': 1990, 'tier': 3, 'timerange': '1990/1990', 'type': 'reanaly', 'units': 'K', 'variable_group': 'tas', 'version': 1}]}
-# Output file:  /Users/ad9465/Documents/Scratch/esmvaltool_tutorial/esmvaltool_output/recipe_parflow_20221220_195637/work/parflow/script/ERA5/Temp.txt
